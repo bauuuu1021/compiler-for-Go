@@ -175,11 +175,23 @@ additive_expr
     : multiplicative_expr
     | additive_expr add_op multiplicative_expr
         {
+            /* operation */
             if ($2 == ADD_t) {  /* add */
-                fprintf(file, "\tiadd\n");
+                fprintf(file, "\tfadd\n");
             }
             else {              /* sub */
-                fprintf(file, "\tisub\n");
+                fprintf(file, "\tfsub\n");
+            }
+
+            /* modify data type of $$ */
+            if ($1.type==FLOAT_t || $3.type==FLOAT_t)
+                $$.type = FLOAT_t;
+            else if ($1.type==INT_t && $3.type==INT_t) {
+                $$.type = INT_t;
+            }
+            else {
+                $$.type = STRONG_INT_t;
+                fprintf(file, "\tf2i\n\ti2f\n");    /* cast to int */
             }
         }
 ;
@@ -193,15 +205,32 @@ multiplicative_expr
     : prefix_expr
     | multiplicative_expr mul_op prefix_expr
         {
+            /* operation */
             if ($2 == MUL_t) {      /* mul */
-                fprintf(file, "\timul\n");
+                fprintf(file, "\tfmul\n");
             }
             else if ($2 == DIV_t) { /* div */
-                fprintf(file, "\tidiv\n");
+                fprintf(file, "\tfdiv\n");
             }
             else {                  /* mod */
-                fprintf(file, "\tirem\n");
-            }    
+                /* check if both operands are int */
+                if ($1.type==FLOAT_t||$3.type==FLOAT_t) {
+                    printf("[ERROR] invalid operands (double) in MOD at line %d\n", yylineno);
+                    numErr++;
+                }
+                else
+                    fprintf(file, "\tirem\n");
+            } 
+
+            /* modify data type of $$ */
+            if ($1.type==FLOAT_t || $3.type==FLOAT_t)
+                $$.type = FLOAT_t;
+            else if ($1.type==INT_t && $3.type==INT_t)
+                $$.type = INT_t;
+            else {
+                $$.type = STRONG_INT_t;
+                fprintf(file, "\tf2i\n\ti2f\n");    /* cast to int */
+            }
         }
 ;
 
@@ -234,11 +263,12 @@ primary_expr
             else {      /* normal */
                 if (symbol_cur->type == INT_t) {
                     fprintf(file, "\tiload %d\n", symbol_cur->index);
-                    $$.type=INT_t;
+                    fprintf(file, "\ti2f\n");   /* cast to float */
+                    $$.type = STRONG_INT_t;     /* mark:must cast it back to int */
                 }
                 else if (symbol_cur->type == FLOAT_t) {
                     fprintf(file, "\tfload %d\n", symbol_cur->index);
-                    $$.type=FLOAT_t;
+                    $$.type = FLOAT_t;
                 }
             }
         }
@@ -247,17 +277,20 @@ primary_expr
 ;
 
 constant
-    : I_CONST   { fprintf(file, "\tldc %d\n", (int)$1.f_val); $$.type=INT_t; }
-    | F_CONST   { fprintf(file, "\tldc %f\n", $1.f_val);      $$.type=FLOAT_t;}
+    : I_CONST   { fprintf(file, "\tldc %f\n", $1.f_val); $$.type=INT_t; }
+    | F_CONST   { fprintf(file, "\tldc %f\n", $1.f_val); $$.type=FLOAT_t;}
 ;
  
 print_func
     : print_func_op '(' equality_expr ')' NEWLINE
         {
+            if ($3.type==INT_t || $3.type==STRONG_INT_t)
+                fprintf(file, "\tf2i\n");
+
             fprintf(file, "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n");
 	        fprintf(file, "\tswap\n");
 	        fprintf(file, "\tinvokevirtual java/io/PrintStream/%s(%c)V\n",\
-                    $1? "print":"println", $3.type==INT_t ? 'I':'F');  
+                    $1? "print":"println", ($3.type==INT_t || $3.type==STRONG_INT_t)? 'I':'F');  
         }
     | print_func_op '(' QUOTA STRING QUOTA ')' NEWLINE  
         {
@@ -342,7 +375,7 @@ void insert_symbol(int type, char *id, double insert_value) {
 
     /* .j file */
     if (insert->type == INT_t) 
-        fprintf(file, "\tistore %d\n", insert->index);
+        fprintf(file, "\tf2i\n\tistore %d\n", insert->index);
     else if (insert->type == FLOAT_t) 
         fprintf(file, "\tfstore %d\n", insert->index);
 
