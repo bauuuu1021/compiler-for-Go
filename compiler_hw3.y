@@ -5,6 +5,7 @@
 extern int yylineno;
 extern int yylex();
 
+/* symbol element */
 typedef struct symbol {
     int index;
     char id[16];
@@ -19,6 +20,8 @@ SYMBOL *symbol_head = NULL, *symbol_tail = NULL;
 void createJasmin(int cmd);
 FILE *file;
 
+/* error handling */
+int numErr;
 void yyerror(const char* error);
 
 /* symbol table function */
@@ -80,11 +83,21 @@ stat
 declaration
     : VAR ID type '=' initializer NEWLINE
         {
-            insert_symbol($3.type, $2.id, $5.f_val);
+            if (lookup_symbol($2.id)) { /* redefined */
+                printf("[ERROR] redeclaration of ‘%s’ at line %d\n", $2.id, yylineno);
+                numErr++;
+            }
+            else
+                insert_symbol($3.type, $2.id, $5.f_val);
         }
     | VAR ID type NEWLINE
         {
-            insert_symbol($3.type, $2.id, 0);
+            if (lookup_symbol($2.id)) { /* redefined */
+                printf("[ERROR] redeclaration of ‘%s’ at line %d\n", $2.id, yylineno);
+                numErr++;
+            }
+            else
+                insert_symbol($3.type, $2.id, 0);
         }
 ;
 
@@ -193,29 +206,43 @@ postfix_expr
 
 primary_expr
     : ID
+        {
+            if (!lookup_symbol($1.id)) { /* doesn't defined before */
+                printf("[ERROR] undeclaration variable ‘%s’ at line %d\n", $1.id\
+                        , yylineno+1);   /* haven't match token **NEWLINE** yet */
+                numErr++;
+            }
+        }
     | constant
     | '(' expr ')'
 ;
 
 constant
-    : I_CONST
-    | F_CONST
+    : I_CONST   { fprintf(file, "ldc %d\n", (int)$1.f_val); $$.type=INT_t; }
+    | F_CONST   { fprintf(file, "ldc %f\n", $1.f_val); $$.type=FLOAT_t;}
 ;
  
 print_func
     : print_func_op '(' equality_expr ')' NEWLINE
+        {
+            fprintf(file, "getstatic java/lang/System/out Ljava/io/PrintStream;\n");
+	        fprintf(file, "swap\n");
+	        fprintf(file, "invokevirtual java/io/PrintStream/%s(%c)V\n",\
+                    $1? "print":"println", $3.type==INT_t ? 'I':'F');  
+        }
     | print_func_op '(' QUOTA STRING QUOTA ')' NEWLINE  
         {
             fprintf(file, "ldc \"%s\"\n", $4.string);
             fprintf(file, "getstatic java/lang/System/out Ljava/io/PrintStream;\n");
 	        fprintf(file, "swap\n");
-	        fprintf(file, "invokevirtual java/io/PrintStream/print(Ljava/lang/String;)V\n");
+	        fprintf(file, "invokevirtual java/io/PrintStream/%s(Ljava/lang/String;)V\n",\
+                    $1? "print":"println");     /* print or println*/
         }
 ;
 
 print_func_op
-    : PRINT
-    | PRINTLN
+    : PRINT     { $$=1; }
+    | PRINTLN   { $$=0; }
 ;
 
 %%
@@ -237,14 +264,24 @@ void createJasmin(int cmd) {
             break;
         case end:
             fprintf(file,"return\n.end method");
+            fclose(file);
             break;
         case err:
+            fclose(file);
+            remove("Computer.j");
+            printf("**************Didn't generate jasmin code**************\n");
             break;
     }
 }
 
 SYMBOL* lookup_symbol(char *id) {
-
+    SYMBOL *current = symbol_head;
+    while (current) {
+        if (!strcmp(current->id,id))
+            return current;
+        current = current->next;
+    }
+    return NULL;
 }
 
 void create_symbol() {
@@ -299,11 +336,14 @@ int main(int argc, char** argv)
     file = fopen("Computer.j","w");
     createJasmin(start);
     
+    numErr = 0;
     yylineno = 0;
     yyparse();
-
-    createJasmin(end);
-    fclose(file);
+printf("num error %d\n", numErr);
+    if (!numErr)    /* parsing valid */ 
+        createJasmin(end);
+    else            /* contain error, don't generate .j file */ 
+        createJasmin(err);
 
     return 0;
 }
