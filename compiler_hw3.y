@@ -5,8 +5,16 @@
 extern int yylineno;
 extern int yylex();
 
+typedef struct {
+    char *id;
+    int type;
+    double value;
+} SYMBOL;
+
 SYMBOL* symbol_head = NULL;
 
+/* create jasmin file */
+void createJasmin(int cmd);
 FILE *file;
 
 void yyerror(const char* error);
@@ -185,10 +193,16 @@ constant
     : I_CONST
     | F_CONST
 ;
-
+ 
 print_func
     : print_func_op '(' equality_expr ')' NEWLINE
-    | print_func_op '(' QUOTA STRING QUOTA ')' NEWLINE
+    | print_func_op '(' QUOTA STRING QUOTA ')' NEWLINE  
+        {
+            fprintf(file, "ldc \"%s\"\n", $4.string);
+            fprintf(file, "getstatic java/lang/System/out Ljava/io/PrintStream;\n");
+	        fprintf(file, "swap\n");
+	        fprintf(file, "invokevirtual java/io/PrintStream/print(Ljava/lang/String;)V\n");
+        }
 ;
 
 print_func_op
@@ -200,9 +214,37 @@ print_func_op
 
 /* C code section */
 
+void yyerror(const char* error) {
+
+}
+
+void createJasmin(int cmd) {
+    switch (cmd) {
+        case start:
+            fprintf(file, ".class public main\n");
+            fprintf(file, ".super java/lang/Object\n");
+            fprintf(file, ".method public static main([Ljava/lang/String;)V\n");
+            fprintf(file, ".limit stack 10\n");
+            fprintf(file, ".limit locals 10\n");
+            break;
+        case end:
+            fprintf(file,"return\n.end method");
+            break;
+        case err:
+            break;
+    }
+}
+
 int main(int argc, char** argv)
 {
+    file = fopen("Computer.j","w");
+    createJasmin(start);
+    
     yylineno = 0;
     yyparse();
+
+    createJasmin(end);
+    fclose(file);
+
     return 0;
 }
