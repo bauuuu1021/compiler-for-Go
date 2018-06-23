@@ -5,13 +5,15 @@
 extern int yylineno;
 extern int yylex();
 
-typedef struct {
-    char *id;
+typedef struct symbol {
+    int index;
+    char id[16];
     int type;
     double value;
+    struct symbol *next;
 } SYMBOL;
 
-SYMBOL* symbol_head = NULL;
+SYMBOL *symbol_head = NULL, *symbol_tail = NULL;
 
 /* create jasmin file */
 void createJasmin(int cmd);
@@ -22,7 +24,7 @@ void yyerror(const char* error);
 /* symbol table function */
 SYMBOL* lookup_symbol(char *id);
 void create_symbol();
-void insert_symbol(SEMTYPE type, char *id, int reg_num);
+void insert_symbol(int type, char *id, double insert_value);
 void dump_symbol();
 
 %}
@@ -77,7 +79,13 @@ stat
 
 declaration
     : VAR ID type '=' initializer NEWLINE
+        {
+            insert_symbol($3.type, $2.id, $5.f_val);
+        }
     | VAR ID type NEWLINE
+        {
+            insert_symbol($3.type, $2.id, 0);
+        }
 ;
 
 type
@@ -233,6 +241,57 @@ void createJasmin(int cmd) {
         case err:
             break;
     }
+}
+
+SYMBOL* lookup_symbol(char *id) {
+
+}
+
+void create_symbol() {
+
+}
+
+void insert_symbol(int type, char *id, double insert_value) {
+    
+    SYMBOL *tail, *insert = (SYMBOL*)malloc(sizeof (SYMBOL));
+    if (!insert) {
+        printf("[insert_symbol]malloc failed\n");
+        createJasmin(err);
+    }
+
+    if (symbol_tail) {
+        insert->index = symbol_tail->index + 1;
+        symbol_tail->next = insert;
+    }
+    else {
+        insert->index = 0;
+        symbol_head = insert;
+    }
+    symbol_tail = insert;
+
+    insert->type = type;
+    insert->value = insert_value;
+    strcpy(insert->id, id);
+
+}
+
+void dump_symbol() {
+    SYMBOL * current;
+    printf("index\tID\ttype\tdata\n");
+
+	for (current=symbol_head; current; current=current->next) {
+		printf("%d\t%s\t",current->index, current->id);
+		switch (current->type) {
+		case INT_t:
+			printf("int\t%d\n", (int)current->value);
+			break;
+		case FLOAT_t:
+            printf("float32\t%f\n", current->value);	
+			break;
+		
+		}
+	}
+
 }
 
 int main(int argc, char** argv)
