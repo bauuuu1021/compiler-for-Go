@@ -14,7 +14,7 @@ typedef struct symbol {
     struct symbol *next;
 } SYMBOL;
 
-SYMBOL *symbol_head = NULL, *symbol_tail = NULL;
+SYMBOL *symbol_head = NULL, *symbol_tail = NULL, *symbol_cur = NULL;
 
 /* create jasmin file */
 void createJasmin(int cmd);
@@ -174,22 +174,41 @@ relational_op
 additive_expr
     : multiplicative_expr
     | additive_expr add_op multiplicative_expr
+        {
+            if ($2 == ADD_t) {  /* add */
+                fprintf(file, "\tiadd\n");
+            }
+            else {              /* sub */
+                fprintf(file, "\tisub\n");
+            }
+        }
 ;
 
 add_op
-    : '+'
-    | '-'
+    : '+'   { $$ = ADD_t; }
+    | '-'   { $$ = SUB_t; }
 ;
 
 multiplicative_expr
     : prefix_expr
     | multiplicative_expr mul_op prefix_expr
+        {
+            if ($2 == MUL_t) {      /* mul */
+                fprintf(file, "\timul\n");
+            }
+            else if ($2 == DIV_t) { /* div */
+                fprintf(file, "\tidiv\n");
+            }
+            else {                  /* mod */
+                fprintf(file, "\tirem\n");
+            }    
+        }
 ;
 
 mul_op
-    : '*'
-    | '/'
-    | '%'
+    : '*'   { $$ = MUL_t; }
+    | '/'   { $$ = DIV_t; }
+    | '%'   { $$ = MOD_t; }
 ;
 
 prefix_expr
@@ -207,10 +226,20 @@ postfix_expr
 primary_expr
     : ID
         {
-            if (!lookup_symbol($1.id)) { /* doesn't defined before */
+            if (!(symbol_cur=lookup_symbol($1.id))) { /* doesn't defined before */
                 printf("[ERROR] undeclaration variable ‘%s’ at line %d\n", $1.id\
                         , yylineno+1);   /* haven't match token **NEWLINE** yet */
                 numErr++;
+            }
+            else {      /* normal */
+                if (symbol_cur->type == INT_t) {
+                    fprintf(file, "\tiload %d\n", symbol_cur->index);
+                    $$.type=INT_t;
+                }
+                else if (symbol_cur->type == FLOAT_t) {
+                    fprintf(file, "\tfload %d\n", symbol_cur->index);
+                    $$.type=FLOAT_t;
+                }
             }
         }
     | constant
@@ -218,24 +247,24 @@ primary_expr
 ;
 
 constant
-    : I_CONST   { fprintf(file, "ldc %d\n", (int)$1.f_val); $$.type=INT_t; }
-    | F_CONST   { fprintf(file, "ldc %f\n", $1.f_val); $$.type=FLOAT_t;}
+    : I_CONST   { fprintf(file, "\tldc %d\n", (int)$1.f_val); $$.type=INT_t; }
+    | F_CONST   { fprintf(file, "\tldc %f\n", $1.f_val);      $$.type=FLOAT_t;}
 ;
  
 print_func
     : print_func_op '(' equality_expr ')' NEWLINE
         {
-            fprintf(file, "getstatic java/lang/System/out Ljava/io/PrintStream;\n");
-	        fprintf(file, "swap\n");
-	        fprintf(file, "invokevirtual java/io/PrintStream/%s(%c)V\n",\
+            fprintf(file, "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n");
+	        fprintf(file, "\tswap\n");
+	        fprintf(file, "\tinvokevirtual java/io/PrintStream/%s(%c)V\n",\
                     $1? "print":"println", $3.type==INT_t ? 'I':'F');  
         }
     | print_func_op '(' QUOTA STRING QUOTA ')' NEWLINE  
         {
-            fprintf(file, "ldc \"%s\"\n", $4.string);
-            fprintf(file, "getstatic java/lang/System/out Ljava/io/PrintStream;\n");
-	        fprintf(file, "swap\n");
-	        fprintf(file, "invokevirtual java/io/PrintStream/%s(Ljava/lang/String;)V\n",\
+            fprintf(file, "\tldc \"%s\"\n", $4.string);
+            fprintf(file, "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n");
+	        fprintf(file, "\tswap\n");
+	        fprintf(file, "\tinvokevirtual java/io/PrintStream/%s(Ljava/lang/String;)V\n",\
                     $1? "print":"println");     /* print or println*/
         }
 ;
@@ -263,7 +292,7 @@ void createJasmin(int cmd) {
             fprintf(file, ".limit locals 10\n");
             break;
         case end:
-            fprintf(file,"return\n.end method");
+            fprintf(file,"\treturn\n.end method");
             fclose(file);
             break;
         case err:
@@ -306,9 +335,16 @@ void insert_symbol(int type, char *id, double insert_value) {
     }
     symbol_tail = insert;
 
+    /* symbol table */
     insert->type = type;
     insert->value = insert_value;
     strcpy(insert->id, id);
+
+    /* .j file */
+    if (insert->type == INT_t) 
+        fprintf(file, "\tistore %d\n", insert->index);
+    else if (insert->type == FLOAT_t) 
+        fprintf(file, "\tfstore %d\n", insert->index);
 
 }
 
@@ -339,7 +375,7 @@ int main(int argc, char** argv)
     numErr = 0;
     yylineno = 0;
     yyparse();
-printf("num error %d\n", numErr);
+    
     if (!numErr)    /* parsing valid */ 
         createJasmin(end);
     else            /* contain error, don't generate .j file */ 
