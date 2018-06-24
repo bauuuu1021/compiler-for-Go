@@ -141,17 +141,24 @@ expression_stat
 expr
     : equality_expr
     | ID '=' expr
+        {
+            if ((symbol_cur = lookup_symbol($1.id))) {
+                if (symbol_cur->type == INT_t) {
+                    fprintf(file, "\tf2i\n");
+                    fprintf(file, "\tistore %d\n", symbol_cur->index);
+                }
+                else
+                    fprintf(file, "\tfstore %d\n", symbol_cur->index);
+            }            
+        }
     | prefix_expr assignment_op expr
         {
             int castNum;
             symbol_cur = lookup_symbol($1.id);
 
             /* if dest. variable is int, cast both expr and var. */
-            if ( $1.type == INT_t || $1.type == STRONG_INT_t) {   
-                //fprintf(file, "\tiload %d\n", symbol_cur->index);
-                //fprintf(file, "\tf2i\n\tf2i\n");   
+            if ( $1.type == INT_t || $1.type == STRONG_INT_t) 
                 castNum = (int)$3.f_val;
-            }
             else {
                 fprintf(file, "\tfload %d\n", symbol_cur->index);
                 castNum = $3.f_val;
@@ -184,7 +191,21 @@ expr
                     fprintf(file, "\t%cstore %d\n", ($1.type != FLOAT_t)?'i':'f', symbol_cur->index);
                     break;
                 case MOD_t :    /* %= */
-                    /* check if both op. are int */
+                    /* check if both operands are int */
+                    if ($1.type==FLOAT_t||$3.type==FLOAT_t) {
+                        printf("[ERROR] invalid operands (double) in MOD at line %d\n", yylineno+1);
+                        numErr++;
+                    }
+                    else {
+                        /* cast to int before mod */
+                        /* TODO refresh symbol table */ 
+                        fprintf(file, "\tf2i\n");
+                        fprintf(file, "\tistore %d\n", STACK_MAX-1);
+                        fprintf(file, "\tf2i\n");
+                        fprintf(file, "\tiload %d\n", STACK_MAX-1);
+                        fprintf(file, "\tirem\n");
+                        fprintf(file, "\t%cstore %d\n", ($1.type != FLOAT_t)?'i':'f', symbol_cur->index);
+                    }
                     break;
                 default :
                     printf("[expr assignment] parsing error\n");
@@ -270,8 +291,15 @@ multiplicative_expr
                     printf("[ERROR] invalid operands (double) in MOD at line %d\n", yylineno+1);
                     numErr++;
                 }
-                else
+                else {
+                    /* cast to int before mod */
+                    fprintf(file, "\tf2i\n");
+                    fprintf(file, "\tistore %d\n", STACK_MAX-1);
+                    fprintf(file, "\tf2i\n");
+                    fprintf(file, "\tiload %d\n", STACK_MAX-1);
                     fprintf(file, "\tirem\n");
+                    fprintf(file, "\ti2f\n");
+                }
             } 
 
             /* modify data type of $$ */
@@ -341,7 +369,7 @@ primary_expr
             }
         }
     | constant
-    | '(' expr ')'
+    | '(' expr ')'  { $$ = $2;}
 ;
 
 constant
@@ -389,8 +417,8 @@ void createJasmin(int cmd) {
             fprintf(file, ".class public main\n");
             fprintf(file, ".super java/lang/Object\n");
             fprintf(file, ".method public static main([Ljava/lang/String;)V\n");
-            fprintf(file, ".limit stack 10\n");
-            fprintf(file, ".limit locals 10\n");
+            fprintf(file, ".limit stack %d\n", STACK_MAX);
+            fprintf(file, ".limit locals %d\n", STACK_MAX);
             break;
         case end:
             fprintf(file,"\treturn\n.end method");

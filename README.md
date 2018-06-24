@@ -18,7 +18,7 @@
 ## Feature
 * Basic features 
     * [x] Handle variable declarations using local variables. (20pt)
-    * [ ] Handle arithmetic operations for integers and float32. (30pt)
+    * [x] Handle arithmetic operations for integers and float32. (30pt)
     * [x] Handle the print and println function. (10pt)
     * [ ] Handle the if...else if...else statement. (40pt)
 * Advanced features (30pt)
@@ -39,3 +39,4 @@
         ```
     * cast `99/x` into int,  get `9` instead of `9.9` 
     * therefore print `9.1` but not `10`
+* `STACK_MAX` is defined in `common.h`, this variable is used to set `limit stack` and `limit locals` of jasmin code. The local variable with largest index (ie. STACK_MAX-1) should be reserved as temporary variable because of some arithmetic operation.
