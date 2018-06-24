@@ -96,8 +96,11 @@ declaration
                 printf("[ERROR] redeclaration of ‘%s’ at line %d\n", $2.id, yylineno);
                 numErr++;
             }
-            else
+            else {
+                /* TODO implement it elegantly */
+                fprintf(file, "\tldc 0.000000001\n");   
                 insert_symbol($3.type, $2.id, 0);
+            }
         }
 ;
 
@@ -139,14 +142,63 @@ expr
     : equality_expr
     | ID '=' expr
     | prefix_expr assignment_op expr
+        {
+            int castNum;
+            symbol_cur = lookup_symbol($1.id);
+
+            /* if dest. variable is int, cast both expr and var. */
+            if ( $1.type == INT_t || $1.type == STRONG_INT_t) {   
+                //fprintf(file, "\tiload %d\n", symbol_cur->index);
+                //fprintf(file, "\tf2i\n\tf2i\n");   
+                castNum = (int)$3.f_val;
+            }
+            else {
+                fprintf(file, "\tfload %d\n", symbol_cur->index);
+                castNum = $3.f_val;
+            }
+
+            /* operation */
+            switch ($2) {
+                case ADD_t :    /* += */
+                    symbol_cur->value+=castNum;
+                    fprintf(file, "\tfadd\n");
+                    fprintf(file, "%s", ($1.type != FLOAT_t)?"\tf2i\n":"");
+                    fprintf(file, "\t%cstore %d\n", ($1.type != FLOAT_t)?'i':'f', symbol_cur->index);
+                    break;
+                case SUB_t :    /* -= */
+                    symbol_cur->value-=castNum;
+                    fprintf(file, "\tfsub\n");
+                    fprintf(file, "%s", ($1.type != FLOAT_t)?"\tf2i\n":"");
+                    fprintf(file, "\t%cstore %d\n", ($1.type != FLOAT_t)?'i':'f', symbol_cur->index);
+                    break;
+                case MUL_t :    /* *= */
+                    symbol_cur->value*=castNum;
+                    fprintf(file, "\tfmul\n");
+                    fprintf(file, "%s", ($1.type != FLOAT_t)?"\tf2i\n":"");
+                    fprintf(file, "\t%cstore %d\n", ($1.type != FLOAT_t)?'i':'f', symbol_cur->index);
+                    break;
+                case DIV_t :    /* /= */
+                    symbol_cur->value/=castNum;
+                    fprintf(file, "\tfdiv\n");
+                    fprintf(file, "%s", ($1.type != FLOAT_t)?"\tf2i\n":"");
+                    fprintf(file, "\t%cstore %d\n", ($1.type != FLOAT_t)?'i':'f', symbol_cur->index);
+                    break;
+                case MOD_t :    /* %= */
+                    /* check if both op. are int */
+                    break;
+                default :
+                    printf("[expr assignment] parsing error\n");
+            }
+
+        }
 ;
 
 assignment_op
-    : ADDASGN
-    | SUBASGN
-    | MULASGN
-    | DIVASGN
-    | MODASGN
+    : ADDASGN   { $$ = ADD_t; }
+    | SUBASGN   { $$ = SUB_t; }
+    | MULASGN   { $$ = MUL_t; }
+    | DIVASGN   { $$ = DIV_t; }
+    | MODASGN   { $$ = MOD_t; }
 ;
 
 equality_expr
@@ -215,7 +267,7 @@ multiplicative_expr
             else {                  /* mod */
                 /* check if both operands are int */
                 if ($1.type==FLOAT_t||$3.type==FLOAT_t) {
-                    printf("[ERROR] invalid operands (double) in MOD at line %d\n", yylineno);
+                    printf("[ERROR] invalid operands (double) in MOD at line %d\n", yylineno+1);
                     numErr++;
                 }
                 else
@@ -249,7 +301,23 @@ prefix_expr
 postfix_expr
     : primary_expr
     | postfix_expr INC
+        {
+            symbol_cur = lookup_symbol($1.id);
+            fprintf(file, "\tldc 1.0\n");
+            fprintf(file, "\tfadd\n");
+            fprintf(file, "%s", ($1.type != FLOAT_t)?"\tf2i\n":"");
+            fprintf(file, "\t%cstore %d\n", ($1.type != FLOAT_t)?'i':'f', symbol_cur->index);
+            symbol_cur->value++;
+        }
     | postfix_expr DEC
+        {
+            symbol_cur = lookup_symbol($1.id);
+            fprintf(file, "\tldc 1.0\n");
+            fprintf(file, "\tfsub\n");
+            fprintf(file, "%s", ($1.type != FLOAT_t)?"\tf2i\n":"");
+            fprintf(file, "\t%cstore %d\n", ($1.type != FLOAT_t)?'i':'f', symbol_cur->index);
+            symbol_cur->value--;
+        }
 ;
 
 primary_expr
