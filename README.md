@@ -20,7 +20,7 @@
     * [x] Handle variable declarations using local variables. (20pt)
     * [x] Handle arithmetic operations for integers and float32. (30pt)
     * [x] Handle the print and println function. (10pt)
-    * [ ] Handle the if...else if...else statement. (40pt)
+    * [x] Handle the if...else if...else statement. (40pt)
 * Advanced features (30pt)
     * [ ] Handle the for statement. (10pt)
     * [ ] Handle the scoping for JVM. (10pt)
