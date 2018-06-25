@@ -63,6 +63,7 @@ id			{letter}+({letter}|{digit})*
  /* Condition and Loop Keywords */
 "if"		{ return IF; }
 "else"		{ return ELSE; }
+"else if"   { return ELSEIF; }
 "for"		{ return FOR; }
 
  /* Declaration Keywords */

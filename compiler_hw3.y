@@ -20,6 +20,9 @@ SYMBOL *symbol_head = NULL, *symbol_tail = NULL, *symbol_cur = NULL;
 void createJasmin(int cmd);
 FILE *file;
 
+/* jump label */
+int numLabel, numExit;
+
 /* error handling */
 int numErr;
 void yyerror(const char* error);
@@ -43,7 +46,7 @@ void dump_symbol();
 %token <rule_type> ADDASGN SUBASGN MULASGN DIVASGN MODASGN
 %token AND OR NOT
 %token PRINT PRINTLN
-%token IF ELSE FOR
+%token IF ELSE ELSEIF FOR
 %token VAR
 %token QUOTA
 %token NEWLINE
@@ -78,6 +81,10 @@ stat
     | expression_stat
     | print_func
     | selection_stat
+        {
+            /* empty stat, to add EXIT label */
+            fprintf(file, "EXIT_%d\:\n", numExit++);
+        }
 ;
 
 declaration
@@ -97,8 +104,7 @@ declaration
                 numErr++;
             }
             else {
-                /* TODO implement it elegantly */
-                fprintf(file, "\tldc 0.000000001\n");   
+                fprintf(file, "\tfconst_0\n");   
                 insert_symbol($3.type, $2.id, 0);
             }
         }
@@ -129,8 +135,83 @@ block_item
 ;
 
 selection_stat
-    : IF '(' expr ')' stat ELSE stat
-    | IF '(' expr ')' stat
+    : if_stat stat end_condition mul_elseif_stat mul_else_stat
+;
+
+end_condition
+    :
+    {
+        fprintf(file, "\tgoto EXIT_%d\n", numExit);
+        fprintf(file, "LABEL_%d\:\n", numLabel);
+    }
+;
+
+if_stat
+    : IF '(' expr ')' 
+        {
+            switch ((int)$3.f_val) {
+                case EQ_t :
+                    fprintf(file, "\tifne LABEL_%d\n", ++numLabel);
+                    break;
+                case NE_t :
+                    fprintf(file, "\tifeq LABEL_%d\n", ++numLabel);
+                    break;
+                case LT_t :
+                    fprintf(file, "\tifge LABEL_%d\n", ++numLabel);
+                    break;
+                case LE_t :
+                    fprintf(file, "\tifgt LABEL_%d\n", ++numLabel);
+                    break;
+                case GT_t :
+                    fprintf(file, "\tifle LABEL_%d\n", ++numLabel);
+                    break;
+                case GE_t :
+                    fprintf(file, "\tiflt LABEL_%d\n", ++numLabel);
+                    break;
+            }
+        }
+;
+
+mul_elseif_stat
+    : mul_elseif_stat elseif_stat stat end_condition
+    |
+;
+
+elseif_stat
+    :  ELSEIF '(' expr ')' 
+        {
+            
+            switch ((int)$3.f_val) {
+                case EQ_t :
+                    fprintf(file, "\tifne LABEL_%d\n", ++numLabel);
+                    break;
+                case NE_t :
+                    fprintf(file, "\tifeq LABEL_%d\n", ++numLabel);
+                    break;
+                case LT_t :
+                    fprintf(file, "\tifge LABEL_%d\n", ++numLabel);
+                    break;
+                case LE_t :
+                    fprintf(file, "\tifgt LABEL_%d\n", ++numLabel);
+                    break;
+                case GT_t :
+                    fprintf(file, "\tifle LABEL_%d\n", ++numLabel);
+                    break;
+                case GE_t :
+                    fprintf(file, "\tiflt LABEL_%d\n", ++numLabel);
+                    break;
+            }
+        }
+    |
+;
+
+mul_else_stat
+    : else_stat stat
+    |
+;
+
+else_stat
+    : ELSE
 ;
 
 expression_stat
@@ -225,23 +306,31 @@ assignment_op
 equality_expr
     : relational_expr
     | equality_expr equality_op relational_expr
+        {
+            fprintf(file, "\tfcmpl\n");
+            $$.f_val = $2;
+        }
 ;
 
 equality_op
-    : EQ
-    | NE
+    : EQ    { $$ = EQ_t; }
+    | NE    { $$ = NE_t; }
 ;
 
 relational_expr
     : additive_expr
     | relational_expr relational_op additive_expr
+        {
+            fprintf(file, "\tfcmpl\n");
+            $$.f_val = $2;
+        }
 ;
 
 relational_op
-    : '<'
-    | '>'
-    | LTE
-    | MTE
+    : '<'   { $$ = LT_t; }
+    | '>'   { $$ = GT_t; }
+    | LTE   { $$ = LE_t; }
+    | MTE   { $$ = GE_t; }
 ;
 
 additive_expr
@@ -322,8 +411,8 @@ mul_op
 
 prefix_expr
     : postfix_expr
-    | INC prefix_expr
-    | DEC prefix_expr
+    | INC prefix_expr   { $$.f_val = $2.f_val+1; }
+    | DEC prefix_expr   { $$.f_val = $2.f_val-1; }
 ;
 
 postfix_expr
@@ -502,6 +591,9 @@ int main(int argc, char** argv)
     createJasmin(start);
     
     numErr = 0;
+    numLabel = 0;
+    numExit = 0;
+
     yylineno = 0;
     yyparse();
     

@@ -15,7 +15,7 @@ all: ${FNAME}.y ${FNAME}.l
 
 test:
 	@./${PARSER} < ${FILE}
-	@echo -e "\n\033[1;33mmain.class output\033[0m"
+	@echo "\033[1;33mmain.class output\033[0m"
 	@java -jar jasmin.jar ${JAVABYTE}.j
 	@java ${EXE} 
 
