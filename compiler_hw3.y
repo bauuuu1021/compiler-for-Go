@@ -368,10 +368,8 @@ expr
                 /* if dest. variable is int, cast both expr and var. */
                 if ( $1.type == INT_t || $1.type == STRONG_INT_t) 
                     castNum = (int)$3.f_val;
-                else {
-                    fprintf(file, "\tfload %d\n", symbol_cur->index);
+                else 
                     castNum = $3.f_val;
-                }
 
                 /* operation */
                 switch ($2) {
