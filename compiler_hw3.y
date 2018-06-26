@@ -82,9 +82,10 @@ stat
     | print_func
     | selection_stat
         {
-            /* empty stat, to add EXIT label */
-            fprintf(file, "EXIT_%d\:\n", numExit++);
+            /* add EXIT label */
+            fprintf(file, "EXIT_%d :\n", numExit++);
         }
+    | for_stat
 ;
 
 declaration
@@ -135,15 +136,20 @@ block_item
 ;
 
 selection_stat
-    : if_stat stat end_condition mul_elseif_stat mul_else_stat
+    : if_stat stat end_condition mul_elseif_stat else_stat
 ;
 
 end_condition
-    :
+    : newline
     {
         fprintf(file, "\tgoto EXIT_%d\n", numExit);
-        fprintf(file, "LABEL_%d\:\n", numLabel);
+        fprintf(file, "LABEL_%d :\n", numLabel);
     }
+;
+
+newline
+    : newline NEWLINE
+    |
 ;
 
 if_stat
@@ -205,14 +211,53 @@ elseif_stat
     |
 ;
 
-mul_else_stat
-    : else_stat stat
+else_stat
+    : ELSE stat
     |
 ;
 
-else_stat
-    : ELSE
+for_stat
+    : for c_while stat
+        {
+            /* add EXIT label */
+            fprintf(file, "\tgoto LABEL_%d\n", numLabel);
+            fprintf(file, "EXIT_%d :\n", numExit++);
+        }
 ;
+
+for
+    : FOR
+        {
+            fprintf(file, "LABEL_%d :\n", ++numLabel);
+        }
+;
+
+c_while
+    : '(' expr ')'
+        {
+            switch ((int)$2.f_val) {
+                case EQ_t :
+                    fprintf(file, "\tifne EXIT_%d\n", numExit);
+                    break;
+                case NE_t :
+                    fprintf(file, "\tifeq EXIT_%d\n", numExit);
+                    break;
+                case LT_t :
+                    fprintf(file, "\tifge EXIT_%d\n", numExit);
+                    break;
+                case LE_t :
+                    fprintf(file, "\tifgt EXIT_%d\n", numExit);
+                    break;
+                case GT_t :
+                    fprintf(file, "\tifle EXIT_%d\n", numExit);
+                    break;
+                case GE_t :
+                    fprintf(file, "\tiflt EXIT_%d\n", numExit);
+                    break;
+            }
+        }
+;
+
 
 expression_stat
     : expr NEWLINE
