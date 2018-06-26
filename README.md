@@ -22,7 +22,7 @@
     * [x] Handle the print and println function. (10pt)
     * [x] Handle the if...else if...else statement. (40pt)
 * Advanced features (30pt)
-    * [ ] Handle the for statement. (10pt)
+    * [x] Handle the for statement. (10pt)
     * [ ] Handle the scoping for JVM. (10pt)
     * [ ] Handle user defined function. (10pt)
 

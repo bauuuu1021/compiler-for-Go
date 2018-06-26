@@ -100,6 +100,7 @@ id			{letter}+({letter}|{digit})*
 
  /* others */
 
+";"         { return SEM; }
 [\n]		{ return NEWLINE; }
 [ \t]		{;} /* Ignore */
 [^; \t] 	{;} /* Ignore other charactor sets */

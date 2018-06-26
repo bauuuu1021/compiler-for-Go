@@ -50,6 +50,7 @@ void dump_symbol();
 %token VAR
 %token QUOTA
 %token NEWLINE
+%token SEM
 
 %token <rule_type> I_CONST
 %token <rule_type> F_CONST
@@ -59,6 +60,7 @@ void dump_symbol();
 %type <rule_type> additive_expr multiplicative_expr prefix_expr postfix_expr
 %type <rule_type> primary_expr constant
 %type <rule_type> type
+%type <rule_type> next_for
 
 %type <intVal> add_op mul_op print_func_op assignment_op equality_op relational_op
 
@@ -217,8 +219,23 @@ else_stat
 ;
 
 for_stat
-    : for c_while stat
+    : for c_while stat      /* C's while */
         {
+            /* add EXIT label */
+            fprintf(file, "\tgoto LABEL_%d\n", numLabel);
+            fprintf(file, "EXIT_%d :\n", numExit++);
+        }
+    | for next_for stat     /* C's for */
+        {
+            /* afterthought */
+            if (symbol_cur = lookup_symbol($2.id)) {
+                fprintf(file, "\tldc %f\n", $2.f_val);
+                fprintf(file, "\tfadd\n");
+                fprintf(file, "%s", ($2.type != FLOAT_t)?"\tf2i\n":"");
+                fprintf(file, "\t%cstore %d\n", ($2.type != FLOAT_t)?'i':'f', symbol_cur->index);
+                symbol_cur->value++;
+            }
+
             /* add EXIT label */
             fprintf(file, "\tgoto LABEL_%d\n", numLabel);
             fprintf(file, "EXIT_%d :\n", numExit++);
@@ -226,10 +243,11 @@ for_stat
 ;
 
 for
-    : FOR
+    : FOR                                                   /* C's while */
         {
             fprintf(file, "LABEL_%d :\n", ++numLabel);
         }
+    | FOR init_for add_label_sem condition_for SEM           /* C's for */
 ;
 
 c_while
@@ -258,6 +276,68 @@ c_while
         }
 ;
 
+init_for
+    : ID '=' expr
+        {
+            if ((symbol_cur = lookup_symbol($1.id))) {
+                if (symbol_cur->type == INT_t) {
+                    fprintf(file, "\tf2i\n");
+                    fprintf(file, "\tistore %d\n", symbol_cur->index);
+                }
+                else
+                    fprintf(file, "\tfstore %d\n", symbol_cur->index);
+            }
+            else {   /* doesn't defined before */
+                printf("[ERROR] undeclaration variable ‘%s’ at line %d\n", $1.id, yylineno);  
+                numErr++;
+            }            
+        }
+;
+
+add_label_sem
+    : SEM
+        {
+            fprintf(file, "LABEL_%d :\n", ++numLabel);
+        }
+;
+condition_for
+    : expr
+        {
+            switch ((int)$1.f_val) {
+                case EQ_t :
+                    fprintf(file, "\tifne EXIT_%d\n", numExit);
+                    break;
+                case NE_t :
+                    fprintf(file, "\tifeq EXIT_%d\n", numExit);
+                    break;
+                case LT_t :
+                    fprintf(file, "\tifge EXIT_%d\n", numExit);
+                    break;
+                case LE_t :
+                    fprintf(file, "\tifgt EXIT_%d\n", numExit);
+                    break;
+                case GT_t :
+                    fprintf(file, "\tifle EXIT_%d\n", numExit);
+                    break;
+                case GE_t :
+                    fprintf(file, "\tiflt EXIT_%d\n", numExit);
+                    break;
+            }
+        }
+;
+
+next_for
+    : postfix_expr INC
+        {
+            $$.f_val = 1;
+            $$.id = $1.id;
+        }
+    | postfix_expr DEC
+        {
+            $$.f_val = -1;
+            $$.id = $1.id;
+        }
+;
 
 expression_stat
     : expr NEWLINE
