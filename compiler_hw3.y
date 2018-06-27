@@ -5,7 +5,7 @@
 extern int yylineno;
 extern int yylex();
 
-/* symbol element */
+/* symbol element and symbol list */
 typedef struct symbol {
     int index;
     char id[16];
@@ -14,7 +14,15 @@ typedef struct symbol {
     struct symbol *next;
 } SYMBOL;
 
+typedef struct symbolList {
+    SYMBOL *head;
+    SYMBOL *tail;
+} SYMLIST;
+
 SYMBOL *symbol_head = NULL, *symbol_tail = NULL, *symbol_cur = NULL;
+SYMLIST *list_head = NULL;
+int numLocal = 0;           /* record local var. index of symbol for jasmin code */
+int symDepth, curDepth;     /* scoping depth */
 
 /* create jasmin file */
 void createJasmin(int cmd);
@@ -30,8 +38,9 @@ void yyerror(const char* error);
 /* symbol table function */
 SYMBOL* lookup_symbol(char *id);
 void create_symbol();
-void insert_symbol(int type, char *id, double insert_value);
+void insert_symbol(int symDepth, int type, char *id, double insert_value);
 void dump_symbol();
+void free_symbol();
 
 %}
 
@@ -93,22 +102,22 @@ stat
 declaration
     : VAR ID type '=' initializer NEWLINE
         {
-            if (lookup_symbol($2.id)) { /* redefined */
+            if (lookup_symbol($2.id) && curDepth==symDepth) { /* redefined */
                 printf("[ERROR] redeclaration of ‘%s’ at line %d\n", $2.id, yylineno);
                 numErr++;
             }
             else
-                insert_symbol($3.type, $2.id, $5.f_val);
+                insert_symbol(symDepth, $3.type, $2.id, $5.f_val);
         }
     | VAR ID type NEWLINE
         {
-            if (lookup_symbol($2.id)) { /* redefined */
+            if (lookup_symbol($2.id) && curDepth==symDepth) { /* redefined */
                 printf("[ERROR] redeclaration of ‘%s’ at line %d\n", $2.id, yylineno);
                 numErr++;
             }
             else {
                 fprintf(file, "\tfconst_0\n");   
-                insert_symbol($3.type, $2.id, 0);
+                insert_symbol(symDepth, $3.type, $2.id, 0);
             }
         }
 ;
@@ -125,7 +134,18 @@ initializer
 
 compound_stat
     : '{' '}'
-    | '{' block_item_list '}'
+    | curly_brace block_item_list curly_brace
+;
+
+curly_brace
+    : '{'
+        {
+            create_symbol();
+        }
+    | '}'
+        {
+            free_symbol();
+        }
 ;
 
 block_item_list
@@ -661,36 +681,57 @@ void createJasmin(int cmd) {
 }
 
 SYMBOL* lookup_symbol(char *id) {
-    SYMBOL *current = symbol_head;
-    while (current) {
-        if (!strcmp(current->id,id))
-            return current;
-        current = current->next;
+    SYMBOL *current;
+    curDepth = symDepth;
+
+    /* searching from current symDepth(deepest), back up to shallow */
+    while (curDepth>-1) {
+        current = list_head[curDepth].head;
+        while (current) {
+            if (!strcmp(current->id,id))
+                return current;
+            current = current->next;
+        }
+        curDepth--;
     }
     return NULL;
 }
 
 void create_symbol() {
-
-}
-
-void insert_symbol(int type, char *id, double insert_value) {
-    
-    SYMBOL *tail, *insert = (SYMBOL*)malloc(sizeof (SYMBOL));
-    if (!insert) {
-        printf("[insert_symbol]malloc failed\n");
-        createJasmin(err);
-    }
-
-    if (symbol_tail) {
-        insert->index = symbol_tail->index + 1;
-        symbol_tail->next = insert;
+    SYMLIST *temp;
+    if (!list_head) {   /* first depth */
+        symDepth = 0;
+        list_head = (SYMLIST*)malloc(sizeof (SYMLIST));
     }
     else {
-        insert->index = 0;
-        symbol_head = insert;
+        ++symDepth;
+        temp = (SYMLIST*)realloc(list_head, (symDepth+1) * sizeof(SYMLIST));
+
+        /* realloc memory size for list_head */
+        if (!temp) {
+            printf("[create_symbol]realloc failed\n");
+            numErr++;
+        }
+        else 
+            list_head = temp;
     }
-    symbol_tail = insert;
+}
+
+void insert_symbol(int symDepth, int type, char *id, double insert_value) {
+    
+    SYMBOL *insert = (SYMBOL*)malloc(sizeof (SYMBOL));
+    if (!insert) {
+        printf("[insert_symbol]malloc failed\n");
+        numErr++;
+    }
+
+    if (list_head[symDepth].tail)   /* exist symbol in this layer */
+        list_head[symDepth].tail->next = insert;
+    else                            /* first symbol of this layer */
+        list_head[symDepth].head = insert;
+
+    insert->index = numLocal++;
+    list_head[symDepth].tail = insert;
 
     /* symbol table */
     insert->type = type;
@@ -707,9 +748,11 @@ void insert_symbol(int type, char *id, double insert_value) {
 
 void dump_symbol() {
     SYMBOL * current;
+    int currentDepth = 0;
     printf("index\tID\ttype\tdata\n");
 
-	for (current=symbol_head; current; current=current->next) {
+    while (currentDepth < symDepth+1) {
+        for (current=list_head[currentDepth].head; current; current=current->next) {
 		printf("%d\t%s\t",current->index, current->id);
 		switch (current->type) {
 		case INT_t:
@@ -721,7 +764,26 @@ void dump_symbol() {
 		
 		}
 	}
+        currentDepth++;
+    }
 
+}
+
+void free_symbol() {
+
+    list_head[symDepth].head = NULL;
+    list_head[symDepth].tail = NULL;
+    
+    /* realloc memory size for list_head */
+    SYMLIST *temp = (SYMLIST*)realloc(list_head, (symDepth+1) * sizeof(SYMLIST));
+    if (!temp) {
+        printf("[create_symbol]realloc failed\n");
+        numErr++;
+    }
+    else 
+        list_head = temp;
+    
+    symDepth--;
 }
 
 int main(int argc, char** argv)
@@ -729,11 +791,12 @@ int main(int argc, char** argv)
     file = fopen("Computer.j","w");
     createJasmin(start);
     
-    numErr = 0;
+    numErr = 0;     /* count number of errors during parsing */
     numLabel = 0;
     numExit = 0;
 
     yylineno = 0;
+    create_symbol();
     yyparse();
     
     if (!numErr)    /* parsing valid */ 
