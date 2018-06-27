@@ -1,5 +1,17 @@
 # Compiler for μGo
 
+## Environment setup
+* Lexical Analyzer (Flex) and Syntax Analyzer (Bison)
+    ```
+    sudo apt-get install flex bison
+    ```
+* JVM
+    ```
+    $sudo add-apt-repository ppa:webupd8team/java
+    $sudo apt-get update
+    $sudo apt-get install default-jre
+    $sudo apt-get install oracle-java8-installer
+    ```
 ## Execute
 * compile
     ```

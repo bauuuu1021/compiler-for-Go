@@ -141,19 +141,6 @@ selection_stat
     : if_stat stat end_condition mul_elseif_stat else_stat
 ;
 
-end_condition
-    : newline
-    {
-        fprintf(file, "\tgoto EXIT_%d\n", numExit);
-        fprintf(file, "LABEL_%d :\n", numLabel);
-    }
-;
-
-newline
-    : newline NEWLINE
-    |
-;
-
 if_stat
     : IF '(' expr ')' 
         {
@@ -178,6 +165,19 @@ if_stat
                     break;
             }
         }
+;
+
+end_condition
+    : newline
+    {
+        fprintf(file, "\tgoto EXIT_%d\n", numExit);
+        fprintf(file, "LABEL_%d :\n", numLabel);
+    }
+;
+
+newline
+    : newline NEWLINE
+    |
 ;
 
 mul_elseif_stat
@@ -392,15 +392,21 @@ expr
                         fprintf(file, "\t%cstore %d\n", ($1.type != FLOAT_t)?'i':'f', symbol_cur->index);
                         break;
                     case DIV_t :    /* /= */
-                        symbol_cur->value/=castNum;
-                        fprintf(file, "\tfdiv\n");
-                        fprintf(file, "%s", ($1.type != FLOAT_t)?"\tf2i\n":"");
-                        fprintf(file, "\t%cstore %d\n", ($1.type != FLOAT_t)?'i':'f', symbol_cur->index);
+                        if (!$3.f_val) {
+                            printf("[ERROR] division by zero at line %d\n", yylineno);
+                            numErr++;
+                        }
+                        else {
+                            symbol_cur->value/=castNum;
+                            fprintf(file, "\tfdiv\n");
+                            fprintf(file, "%s", ($1.type != FLOAT_t)?"\tf2i\n":"");
+                            fprintf(file, "\t%cstore %d\n", ($1.type != FLOAT_t)?'i':'f', symbol_cur->index);
+                        }
                         break;
                     case MOD_t :    /* %= */
                         /* check if both operands are int */
                         if ($1.type==FLOAT_t||$3.type==FLOAT_t) {
-                            printf("[ERROR] invalid operands (double) in MOD at line %d\n", yylineno+1);
+                            printf("[ERROR] invalid operands (double) in MOD at line %d\n", yylineno);
                             numErr++;
                         }
                         else {
@@ -498,20 +504,25 @@ multiplicative_expr
                 fprintf(file, "\tfmul\n");
             }
             else if ($2 == DIV_t) { /* div */
-                fprintf(file, "\tfdiv\n");
+                if (!$3.f_val) {
+                    printf("[ERROR] division by zero at line %d\n", yylineno);
+                    numErr++;
+                }
+                else
+                    fprintf(file, "\tfdiv\n");
             }
             else {                  /* mod */
                 /* check if both operands are int */
                 if ($1.type==FLOAT_t||$3.type==FLOAT_t) {
-                    printf("[ERROR] invalid operands (double) in MOD at line %d\n", yylineno+1);
+                    printf("[ERROR] invalid operands (double) in MOD at line %d\n", yylineno);
                     numErr++;
                 }
                 else {
-                    /* cast to int before mod */
+                    /* cast both operands to int before mod */
                     fprintf(file, "\tf2i\n");
-                    fprintf(file, "\tistore %d\n", STACK_MAX-1);
+                    fprintf(file, "\tistore %d\n", STACK_MAX-1);    /* store in temp. variable */
                     fprintf(file, "\tf2i\n");
-                    fprintf(file, "\tiload %d\n", STACK_MAX-1);
+                    fprintf(file, "\tiload %d\n", STACK_MAX-1);     /* load from temp. variable */
                     fprintf(file, "\tirem\n");
                     fprintf(file, "\ti2f\n");
                 }
