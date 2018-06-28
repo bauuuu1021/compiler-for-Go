@@ -95,12 +95,17 @@ id			{letter}+({letter}|{digit})*
  /* C++ type Comment */
 \/\/.*	{ ; }
 
+ /* user defined function */
+"func"      { return FUNC; }
+"return"    { return RET; }
+"main"      { return MAIN; }
+
  /* Variable ID */
  {id}       { yylval.rule_type.id = strdup(yytext); return ID; }
 
  /* others */
-
 ";"         { return SEM; }
+","         { return ','; }
 [\n]		{ return NEWLINE; }
 [ \t]		{;} /* Ignore */
 [^; \t] 	{;} /* Ignore other charactor sets */

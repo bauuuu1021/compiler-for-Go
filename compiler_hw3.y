@@ -60,6 +60,7 @@ void free_symbol();
 %token QUOTA
 %token NEWLINE
 %token SEM
+%token FUNC RET MAIN
 
 %token <rule_type> I_CONST
 %token <rule_type> F_CONST
@@ -71,6 +72,7 @@ void free_symbol();
 %type <rule_type> type
 %type <rule_type> next_for
 
+%type <intVal> func_label
 %type <intVal> add_op mul_op print_func_op assignment_op equality_op relational_op
 
 %start program
@@ -97,6 +99,7 @@ stat
             fprintf(file, "EXIT_%d :\n", numExit++);
         }
     | for_stat
+    | func_dec
 ;
 
 declaration
@@ -359,6 +362,31 @@ next_for
         }
 ;
 
+func_dec
+    /* alloc new symbolList but don't free it */
+    : func_label '(' ')' type newline curly_brace newline program RET additive_expr newline '}'  
+        {
+            /* ret back to addr. that calling this func. */
+            fprintf(file, "\tret %d\n", $1);    /* index */
+        }
+    | func_label '(' ')' newline curly_brace newline program newline '}'
+;
+
+func_label
+    : FUNC ID
+        {
+            insert_symbol(0, FUNC_t, $2.id, 0);   
+            fprintf(file, "\tgoto main\n");
+            fprintf(file, "%s :\n", $2.id);
+            fprintf(file, "\tastore %d\n", numLocal-1);   /* store addr. of calling this func. */
+            $$ = numLocal-1;
+        }
+    | FUNC MAIN
+        {
+            fprintf(file, "main :\n");
+        }
+;
+
 expression_stat
     : expr NEWLINE
     | NEWLINE
@@ -616,8 +644,24 @@ primary_expr
                 }
             }
         }
+    | ID '(' front_parm ')'   /* call function */
+        {
+            fprintf(file, "\tjsr %s\n", $1.id);
+        }
     | constant
     | '(' expr ')'  { $$ = $2;}
+;
+
+front_parm
+    : primary_expr
+        {
+            printf("const is %f\n", $1.f_val);
+        }
+    | front_parm ',' primary_expr
+        {
+            printf("const is %f\n", $3.f_val);
+        }
+    |
 ;
 
 constant
@@ -761,6 +805,9 @@ void dump_symbol() {
 		case FLOAT_t:
             printf("float32\t%f\n", current->value);	
 			break;
+        case FUNC_t:
+            printf("func name\t\t\n");
+            break;
 		
 		}
 	}
