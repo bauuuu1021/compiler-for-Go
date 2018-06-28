@@ -22,7 +22,10 @@ typedef struct symbolList {
 SYMBOL *symbol_head = NULL, *symbol_tail = NULL, *symbol_cur = NULL;
 SYMLIST *list_head = NULL;
 int numLocal = 0;           /* record local var. index of symbol for jasmin code */
-int symDepth, curDepth;     /* scoping depth */
+int symDepth;               /* current depth : search from here and insert in this layer */
+int searchDepth;            /* check if variable has been defined in this layer */
+int totalDepth;             /* record number of layer */
+int mainDepth;              /* avoid lookup_symbol searching user function layer */
 
 /* create jasmin file */
 void createJasmin(int cmd);
@@ -38,7 +41,7 @@ void yyerror(const char* error);
 /* symbol table function */
 SYMBOL* lookup_symbol(char *id);
 void create_symbol();
-void insert_symbol(int symDepth, int type, char *id, double insert_value);
+void insert_symbol(int insertDepth, int type, char *id, double insert_value);
 void dump_symbol();
 void free_symbol();
 
@@ -105,7 +108,7 @@ stat
 declaration
     : VAR ID type '=' initializer NEWLINE
         {
-            if (lookup_symbol($2.id) && curDepth==symDepth) { /* redefined */
+            if (lookup_symbol($2.id) && searchDepth==symDepth) { /* redefined */
                 printf("[ERROR] redeclaration of ‘%s’ at line %d\n", $2.id, yylineno);
                 numErr++;
             }
@@ -114,7 +117,7 @@ declaration
         }
     | VAR ID type NEWLINE
         {
-            if (lookup_symbol($2.id) && curDepth==symDepth) { /* redefined */
+            if (lookup_symbol($2.id) && searchDepth==symDepth) { /* redefined */
                 printf("[ERROR] redeclaration of ‘%s’ at line %d\n", $2.id, yylineno);
                 numErr++;
             }
@@ -364,10 +367,10 @@ next_for
 
 func_dec
     /* alloc new symbolList but don't free it */
-    : func_label '(' ')' type newline curly_brace newline program RET additive_expr newline '}'  
+    : func_label '(' end_parm ')' type newline '{' newline program RET additive_expr newline '}'  
         {
             /* ret back to addr. that calling this func. */
-            fprintf(file, "\tret %d\n", $1);    /* index */
+            fprintf(file, "\tret %d\n", $1);    /* local variable of address */
         }
     | func_label '(' ')' newline curly_brace newline program newline '}'
 ;
@@ -375,7 +378,8 @@ func_dec
 func_label
     : FUNC ID
         {
-            insert_symbol(0, FUNC_t, $2.id, 0);   
+            create_symbol();
+            insert_symbol(0, FUNC_t, $2.id, symDepth);  /* store symDepth(current layer) as f_val */ 
             fprintf(file, "\tgoto main\n");
             fprintf(file, "%s :\n", $2.id);
             fprintf(file, "\tastore %d\n", numLocal-1);   /* store addr. of calling this func. */
@@ -383,7 +387,23 @@ func_label
         }
     | FUNC MAIN
         {
+            mainDepth = totalDepth+1;
             fprintf(file, "main :\n");
+        }
+;
+
+end_parm
+    : ID type
+        {
+            insert_symbol(symDepth, $2.type, $1.id, 0);
+        }
+    | ID type ',' end_parm 
+        {
+            insert_symbol(symDepth, $2.type, $1.id, 0);
+        }
+    |
+        {
+            printf("nothing\n");
         }
 ;
 
@@ -654,13 +674,7 @@ primary_expr
 
 front_parm
     : primary_expr
-        {
-            printf("const is %f\n", $1.f_val);
-        }
     | front_parm ',' primary_expr
-        {
-            printf("const is %f\n", $3.f_val);
-        }
     |
 ;
 
@@ -726,17 +740,17 @@ void createJasmin(int cmd) {
 
 SYMBOL* lookup_symbol(char *id) {
     SYMBOL *current;
-    curDepth = symDepth;
+    searchDepth = symDepth;
 
     /* searching from current symDepth(deepest), back up to shallow */
-    while (curDepth>-1) {
-        current = list_head[curDepth].head;
+    while (searchDepth>mainDepth-1) {
+        current = list_head[searchDepth].head;
         while (current) {
             if (!strcmp(current->id,id))
                 return current;
             current = current->next;
         }
-        curDepth--;
+        searchDepth--;
     }
     return NULL;
 }
@@ -744,12 +758,12 @@ SYMBOL* lookup_symbol(char *id) {
 void create_symbol() {
     SYMLIST *temp;
     if (!list_head) {   /* first depth */
-        symDepth = 0;
+        totalDepth = 0;
         list_head = (SYMLIST*)malloc(sizeof (SYMLIST));
     }
     else {
-        ++symDepth;
-        temp = (SYMLIST*)realloc(list_head, (symDepth+1) * sizeof(SYMLIST));
+        ++totalDepth;
+        temp = (SYMLIST*)realloc(list_head, (totalDepth+1) * sizeof(SYMLIST));
 
         /* realloc memory size for list_head */
         if (!temp) {
@@ -759,9 +773,10 @@ void create_symbol() {
         else 
             list_head = temp;
     }
+    symDepth = totalDepth;
 }
 
-void insert_symbol(int symDepth, int type, char *id, double insert_value) {
+void insert_symbol(int insertDepth, int type, char *id, double insert_value) {
     
     SYMBOL *insert = (SYMBOL*)malloc(sizeof (SYMBOL));
     if (!insert) {
@@ -769,13 +784,13 @@ void insert_symbol(int symDepth, int type, char *id, double insert_value) {
         numErr++;
     }
 
-    if (list_head[symDepth].tail)   /* exist symbol in this layer */
-        list_head[symDepth].tail->next = insert;
+    if (list_head[insertDepth].tail)   /* exist symbol in this layer */
+        list_head[insertDepth].tail->next = insert;
     else                            /* first symbol of this layer */
-        list_head[symDepth].head = insert;
+        list_head[insertDepth].head = insert;
 
     insert->index = numLocal++;
-    list_head[symDepth].tail = insert;
+    list_head[insertDepth].tail = insert;
 
     /* symbol table */
     insert->type = type;
@@ -795,7 +810,7 @@ void dump_symbol() {
     int currentDepth = 0;
     printf("index\tID\ttype\tdata\n");
 
-    while (currentDepth < symDepth+1) {
+    while (currentDepth-1 < totalDepth) {
         for (current=list_head[currentDepth].head; current; current=current->next) {
 		printf("%d\t%s\t",current->index, current->id);
 		switch (current->type) {
@@ -806,7 +821,7 @@ void dump_symbol() {
             printf("float32\t%f\n", current->value);	
 			break;
         case FUNC_t:
-            printf("func name\t\t\n");
+            printf("func name\t%f\n", current->value);
             break;
 		
 		}
@@ -831,6 +846,7 @@ void free_symbol() {
         list_head = temp;
     
     symDepth--;
+    totalDepth--;
 }
 
 int main(int argc, char** argv)
